@@ -416,3 +416,57 @@ if __name__ == '__main__':
 
     else:
         print(f"Could not calculate financials because market solution failed: {market_solution.get('message')}")
+
+
+def run_traditional_simulation(scenario_dict):
+    """
+    Main entry point for running a traditional simulation.
+    Takes a scenario dictionary, runs the simulation, and returns results.
+    """
+    try:
+        parsed_data = prepare_input_data(scenario_dict)
+        if not parsed_data: # Or check a key field like 'num_buses' if it can be 0
+            return {"error": "Failed to parse scenario data.", "details": "Parsed data is empty or invalid."}
+
+        market_solution = solve_traditional_market(parsed_data)
+
+        # The 'status' field in market_solution is 'success' or 'failure' (custom)
+        # linprog result.status == 0 means success for scipy.optimize.linprog
+        # We are using our custom 'status' string.
+        if market_solution.get('status') == 'success':
+            financial_results = calculate_financials(parsed_data, market_solution)
+            # Combine all results into a single dictionary
+            # Prioritize keys from financial_results if there are overlaps with market_solution
+            # though typically market_solution contains dispatch and prices, financials contains monetary outcomes.
+
+            # Ensure financial_results is not just an error message
+            if "error" in financial_results:
+                 return {
+                    "error": "Financial calculation failed after successful dispatch.",
+                    "details": financial_results["error"],
+                    "market_solution_summary": {
+                        "status": market_solution.get('status'),
+                        "total_cost": market_solution.get('total_cost')
+                    }
+                }
+
+            # Merging results: market_solution contains operational details and prices,
+            # financial_results contains monetary outcomes.
+            # A simple merge might be okay if keys are distinct, or structure them:
+            return {
+                "simulation_type": "traditional",
+                "status": "success",
+                "operational_results": market_solution,
+                "financial_results": financial_results
+            }
+        else:
+            return {
+                "error": "Traditional simulation failed during market solving.",
+                "details": market_solution.get('message', 'No details from solver.'),
+                "status": market_solution.get('status', 'failure'),
+                "market_solution_attempt": market_solution # Return whatever partial info solver gave
+            }
+    except Exception as e:
+        import traceback
+        print(f"Exception in run_traditional_simulation: {e}\n{traceback.format_exc()}")
+        return {"error": "An unexpected error occurred in the traditional simulation engine.", "details": str(e)}
